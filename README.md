@@ -63,6 +63,11 @@ Export-i3sResources.ps1 is a PowerShell script that exports Image Streamer resou
 
 ```
 
+### To export Artifact Bundles
 
+```
+    .\Export-i3sResources.ps1 -OVApplianceIP <OV-IP-Address> -OVAdminName <Admin-name> -OVAdminPassword <password> -i3sArtifactBundleCSV c:\ArtifactBundle.csv
+
+```
 
 

@@ -1,4 +1,4 @@
-## -------------------------------------------------------------------------------------------------------------
+﻿## -------------------------------------------------------------------------------------------------------------
 ##
 ##
 ##      Description: Export
@@ -62,6 +62,10 @@
      .\ Export-i3sResources.ps1  -OVApplianceIP 10.254.1.66 -OVAdminName Administrator -password P@ssword1 -i3sBuildPlanCSV  .\planscript.csv 
         The script connects to the OneView appliance and exports Image Streamer  plan script to the planscript.csv file
     
+    
+     .\ Export-i3sResources.ps1  -OVApplianceIP 10.254.1.66 -OVAdminName Administrator -password P@ssword1 -i3sArtifactBundleCSV  .\artifactbundle.csv 
+        The script connects to the OneView appliance and exports Image Streamer  artifact bundles to the planscript.csv file
+    
     .\ Export-i3sResources.ps1  -OVApplianceIP 10.254.1.66 -OVAdminName Administrator -password P@ssword1 -All
         The script connects to the OneView appliance and exports Image Streamer  resources to the planscript.csv file
 
@@ -92,6 +96,9 @@
   .PARAMETER i3sPlanScriptCSV
     Path to the CSV file containing Plan Scripts definition
 
+  .PARAMETER i3sGoldenImageCSV
+     Path to the CSV file containing Artifact Bundles definition
+
   .PARAMETER OneViewModule
     Module name for POSH OneView library.
 	
@@ -112,18 +119,19 @@
 ## -------------------------------------------------------------------------------------------------------------
 
 Param ( 
-[string]$OVApplianceIP        = "", 
-[string]$OVAdminName          = "Administrator", 
-[string]$OVAdminPassword      = "password",
-[string]$OVAuthDomain         = "local",
+[string]$OVApplianceIP          = "", 
+[string]$OVAdminName            = "Administrator", 
+[string]$OVAdminPassword        = "password",
+[string]$OVAuthDomain           = "local",
 
 [switch]$All,
 
-[string]$i3sOSvolumeCSV       =  "",                                               
-[string]$i3sDeploymentPlanCSV =  "",
-[string]$i3sBuildPlanCSV      =  "",                                                     
-[string]$i3sPlanScriptCSV     =  "",
-[string]$i3sGoldenImageCSV    =  "",
+[string]$i3sOSvolumeCSV         =  "",                                               
+[string]$i3sDeploymentPlanCSV   =  "",
+[string]$i3sBuildPlanCSV        =  "",                                                     
+[string]$i3sPlanScriptCSV       =  "",
+[string]$i3sGoldenImageCSV      =  "",
+[string]$i3sArtifactBundleCSV   =  "",
 
 
 [string]$OneViewModule        = "HPOneView.310"
@@ -153,6 +161,7 @@ $GoldenImageHeader           = "Name,Size(GiB),BuildPlanName"
 $DeploymentPlanHeader        = "Name,Description,State,BuildPlan,GoldenImage,CustomAttributes"
 $BuildPlanHeader             = "Name,Description,Type,Steps"
 $PlanScriptHeader            = "Name,Description,Type,Content,CustomAttributes"
+$ArtifactBundleHeader        = "Name,Description,Content"
 
 
 
@@ -557,12 +566,73 @@ Function Export-i3sPlanScript([string]$OutFile)
 
 } 
 
+## -------------------------------------------------------------------------------------------------------------
+##
+##                     Function Export-i3sArtifactBundle
+##
+## -------------------------------------------------------------------------------------------------------------
+Function Export-i3sArtifactBundle([string]$OutFile)  
+{
+    $httpsi3s      = "https://$script:i3sip"
+    $ThisUri       = $httpsi3s + $ArtifactBundlesUri 
+    $ValuesArray   = @()
+$ThisUri
+
+    try 
+    {
+        $res                  = invoke-RestMethod -Uri $ThisUri -Headers $script:headers -Method GET 
+        $ListArtifactBundles  = $res.members
+
+        foreach ($AB in $ListArtifactBundles)
+        {
+            $ABname         = $AB.name
+            $ABdescription  = $AB.description -replace $CR, $LF -replace $Comma, $Equal            # Replace comma with equal as comma is delimiter in CSV
+       
+            $ABzipFile     = "$script:ThisPath\$ABName.zip"
+            $downloadURI   = $AB.downloadURI
+            
+            $ThisUri       = "$httpsi3s$downloadURI"
+
+            try 
+            {
+                invoke-webrequest -URI $ThisUri -headers $script:headers -outfile $ABzipFile
+            }
+            catch 
+            {
+                write-host -foreground YELLOW "Artifact Bundle : Error in invoke-restmethod calling $ThisUri ....."
+            }
+            
+
+ $ABname           
+           
+
+            #"Name,Description,Content"
+            $ValuesArray += "$ABname,$ABdescription,$ABzipFile" + $CR
+        }
+
+        if ($ValuesArray -ne $NULL)
+        {
+            $a= New-Item $OutFile  -type file -force
+            Set-content -Path $OutFile -Value $ArtifactBundleHeader
+            Add-content -path $OutFile -Value $ValuesArray
+
+        }
+    }
+    catch 
+    {
+
+        write-host -foreground YELLOW "Artifact-bundle : Error in invoke-restmethod calling $ThisUri ....."
+
+    }
+
+} 
+
 
 # ---------------- Connect to OneView appliance
 
         write-host -foreground Cyan "$CR Connect to the OneView appliance..."
         $global:ApplianceConnection =  Connect-HPOVMgmt -appliance $OVApplianceIP -user $OVAdminName -password $OVAdminPassword  -AuthLoginDomain $OVAuthDomain
-        
+
         # Get i3sP IP and update headers
         Get-i3sip_Headers
 
@@ -583,7 +653,7 @@ Function Export-i3sPlanScript([string]$OutFile)
             $i3sdeploymentPlanCSV                  = "$CSVFolder\DeploymentPlan.csv"
             $i3sbuildPlanCSV                       = "$CSVFolder\BuildPlan.csv"
             $i3sPlanScriptCSV                      = "$CSVFolder\Planscript.csv"
-
+            $i3sArtifactBundleCSV                  = "$CSVFolder\ArtifactBundle.csv"
                   
         }  
             
@@ -621,6 +691,12 @@ Function Export-i3sPlanScript([string]$OutFile)
                 Export-i3sGoldenImage        -OutFile $i3sGoldenImageCSV
         }
 
+         
+        if ($i3sArtifactBundleCSV)
+        { 
+                write-host -ForegroundColor Cyan "Exporting Image Streamer Artifact Bundles to CSV file --> $i3sArtifactBundleCSV " 
+                Export-i3sArtifactBundle        -OutFile $i3sArtifactBundleCSV
+        }
         write-host -foreground Cyan "$CR Disconnect from the OneView appliance..."
         Disconnect-HPOVMgmt
 
